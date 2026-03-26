@@ -626,13 +626,13 @@ def main():
     )
     parser.add_argument(
         "--review-runner",
-        required=True,
-        help="Runner command template for the review model (e.g., 'opencode run --model {model} --format json')",
+        default="",
+        help="Runner command template for the review model (required with --invoke-judge)",
     )
     parser.add_argument(
         "--review-model",
-        required=True,
-        help="Model identifier for the review model (e.g., relay-kimi/kimi-k2.5)",
+        default="",
+        help="Model identifier for the review model (required with --invoke-judge)",
     )
     parser.add_argument(
         "--timeout",
@@ -680,6 +680,13 @@ def main():
         print(f"ERROR: SKILL.md not found in skill path: {skill_md}", file=sys.stderr)
         sys.exit(1)
 
+    if args.invoke_judge and (not args.review_runner or not args.review_model):
+        print(
+            "ERROR: --review-runner and --review-model are required with --invoke-judge",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     artifacts_dir = Path(args.artifacts_dir)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
@@ -691,7 +698,10 @@ def main():
     print(f"Dataset: {dataset_path} ({len(dataset)} cases)", file=sys.stderr)
     print(f"Reports dir: {reports_dir}", file=sys.stderr)
     print(f"Skill path: {skill_path}", file=sys.stderr)
-    print(f"Review model: {args.review_model}", file=sys.stderr)
+    print(
+        f"Review model: {args.review_model or '<not configured>'}",
+        file=sys.stderr,
+    )
     print(file=sys.stderr)
 
     # Load skill content
@@ -888,7 +898,7 @@ def main():
             review_summary_path,
             {
                 "model_slug": model_slug,
-                "review_model": args.review_model,
+                "review_model": args.review_model or None,
                 "invoke_judge": args.invoke_judge,
                 "cases": review_results,
             },
@@ -927,8 +937,8 @@ def main():
         {
             "skill_path": str(skill_path),
             "dataset": str(dataset_path),
-            "review_runner": args.review_runner,
-            "review_model": args.review_model,
+            "review_runner": args.review_runner or None,
+            "review_model": args.review_model or None,
             "models": model_summaries,
         },
     )
