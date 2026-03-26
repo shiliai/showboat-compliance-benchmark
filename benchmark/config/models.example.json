@@ -1,0 +1,20 @@
+{
+  "models": [
+    "relay-kimi/kimi-k2.5",
+    "relay-minimax/MiniMax-M2.7",
+    "relay-glm/claude-opus-4-6",
+    "relay-glm/claude-sonnet-4-6",
+    "relay-glm/claude-haiku-4-5-20251001",
+    "relay-claude/claude-opus-4-6",
+    "relay-claude/claude-sonnet-4-6",
+    "relay-claude/claude-haiku-4-5-20251001",
+    "relay-gpt-sub/gpt-5.4",
+    "relay-gpt-sub/gpt-5.4-mini",
+    "relay-gpt-sub/gpt-5.3-codex",
+    "relay-gpt-all/gpt-5.4-mini",
+    "relay-gpt-all/gpt-5.3-codex",
+    "relay-gemini/gemini-3.1-pro-preview",
+    "relay-gemini/gemini-3.1-flash-lite-preview",
+    "relay-gemini/gemini-3-flash-preview"
+  ]
+}

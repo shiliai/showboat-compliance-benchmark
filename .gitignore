@@ -1,0 +1,23 @@
+# Benchmark generated files
+benchmark/case-workspaces/
+benchmark/artifacts/
+benchmark/reports/
+benchmark/outputs-*.json
+benchmark/outputs-*.json.meta.json
+
+# Local environment files
+benchmark/.env*
+!benchmark/.env.example
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+
+# Editor / OS artifacts
+.DS_Store
+*.swp
+*.swo
+*~
