@@ -3,14 +3,15 @@
 Summarize benchmark effectiveness across models for skill evaluation.
 
 This script:
-1. Loads skill content from SKILL.md + references
+1. Validates skill content exists at the given skill path
 2. Discovers model slugs from outputs-glob pattern
 3. For each model, joins benchmark evidence into per-case review bundles
 4. Computes deterministic semantic baseline via score_adjusted.score_case_adjusted()
 5. Detects case-id divergence and exits non-zero on mismatch
 6. Creates rendering payload for judge prompt and decision payload for aggregation
-7. Optionally invokes a review model (judge) for each case
-8. Persists prompt/response traces for auditing
+7. Generates pointer-style prompts that reference on-disk skill files
+8. Optionally invokes a review model (judge) for each case
+9. Persists prompt/response traces for auditing
 """
 
 import argparse
@@ -177,24 +178,20 @@ def invoke_judge(
     }
 
 
-def load_skill_content(skill_path: Path) -> str:
-    """Load skill instructions from SKILL.md and all reference files."""
-    skill_md = skill_path / "SKILL.md"
-    if not skill_md.exists():
-        raise FileNotFoundError(f"SKILL.md not found at {skill_path}")
+def validate_skill_files(skill_path: Path) -> None:
+    required_files = [
+        skill_path / "SKILL.md",
+        skill_path / "references" / "review-rubric.md",
+        skill_path / "references" / "response-schema.md",
+    ]
+    missing_files = [str(path) for path in required_files if not path.exists()]
+    if missing_files:
+        raise FileNotFoundError(
+            "Missing required skill files: " + ", ".join(sorted(missing_files))
+        )
 
-    content_parts = [skill_md.read_text(encoding="utf-8")]
-
-    # Load all reference files
-    references_dir = skill_path / "references"
-    if references_dir.exists():
-        for ref_file in sorted(references_dir.glob("*.md")):
-            ref_content = ref_file.read_text(encoding="utf-8")
-            content_parts.append(
-                f"\n\n---\n\n## Reference: {ref_file.name}\n\n{ref_content}"
-            )
-
-    return "\n".join(content_parts)
+    for path in required_files:
+        path.read_text(encoding="utf-8")
 
 
 def discover_model_slugs(outputs_glob: str, benchmark_dir: Path) -> List[str]:
@@ -369,21 +366,33 @@ def detect_case_divergence(
 
 
 def render_judge_prompt(
-    skill_content: str,
+    skill_path: Path,
     case_bundle: Dict[str, Any],
 ) -> str:
     """
     Render the judge prompt for a single case.
 
-    Includes skill instructions, task text, expected rules, raw output,
-    and scoring results.
+    Uses pointer-style invocation: tells the judge to read the skill
+    from disk instead of inlining full skill content. Only the
+    task-specific case delta is included in the prompt.
     """
+    abs_skill = skill_path.resolve()
+
     lines = [
         "# Benchmark Case Review",
         "",
         "## Skill Instructions",
         "",
-        skill_content,
+        "You are performing a post-benchmark effectiveness review. Before scoring, "
+        "read the skill definition and references from disk:",
+        "",
+        f"1. Read the skill definition: `{abs_skill}/SKILL.md`",
+        f"2. Read the review rubric: `{abs_skill}/references/review-rubric.md`",
+        f"3. Read the response schema: `{abs_skill}/references/response-schema.md`",
+        "",
+        "Follow the instructions in SKILL.md exactly. Apply the rubric from "
+        "`review-rubric.md` when scoring. Emit your verdict following the format "
+        "in `response-schema.md`.",
         "",
         "---",
         "",
@@ -741,9 +750,9 @@ def main():
     )
     print(file=sys.stderr)
 
-    # Load skill content
-    skill_content = load_skill_content(skill_path)
-    print(f"Skill content loaded: {len(skill_content)} characters", file=sys.stderr)
+    # Validate skill exists and is readable
+    validate_skill_files(skill_path)
+    print(f"Skill validated at: {skill_path}", file=sys.stderr)
 
     # Discover model slugs
     benchmark_dir = dataset_path.parent
@@ -844,7 +853,7 @@ def main():
 
         for bundle in case_bundles:
             case_id = bundle["case_id"]
-            prompt = render_judge_prompt(skill_content, bundle)
+            prompt = render_judge_prompt(skill_path, bundle)
 
             # Save prompt file
             prompt_path = prompts_dir / f"{case_id}.md"

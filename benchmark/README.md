@@ -113,9 +113,10 @@ If an agent can read this README and has shell access, it should be able to run 
    - execute model-emitted Showboat commands
    - generate model artifacts and benchmark review docs
 5. **Optionally generate the effectiveness summary** (`ENABLE_EFFECTIVENESS_SUMMARY=1`)
-   - build per-case review bundles from existing outputs/reports
-   - write `reports/final-effectiveness-summary.md` and `.json`
-   - save prompt/review artifacts under `artifacts/effectiveness-summary/`
+    - build per-case review bundles from existing outputs/reports
+    - generate pointer-style judge prompts that reference on-disk skill files at `skills/final-effectiveness-summary/` instead of inlining full skill text
+    - write `reports/final-effectiveness-summary.md` and `.json`
+    - save prompt/review artifacts under `artifacts/effectiveness-summary/`
 
 ## One-command batch run
 
@@ -168,6 +169,8 @@ This additionally creates:
 - `reports/final-effectiveness-summary.md`
 - `reports/final-effectiveness-summary.json`
 - `artifacts/effectiveness-summary/`
+
+The generated judge prompts use **pointer-style invocation**: instead of inlining the full skill text (SKILL.md + references) into each prompt, the prompt tells the judge model to read the skill definition and reference files from their on-disk locations under `skills/final-effectiveness-summary/`. This keeps prompts compact and avoids duplicating ~370 lines of skill content across every case.
 
 Invoke the review judge as well, using the default pinned review model (`relay-kimi/kimi-k2.5`):
 
