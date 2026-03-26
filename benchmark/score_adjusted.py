@@ -25,18 +25,35 @@ def count_showboat_exec(text: str) -> int:
 
 def count_commands_in_exec(text: str) -> int:
     """Count actual commands within showboat exec, accepting chaining with && or ;"""
-    # Find the bash command content
-    match = re.search(
-        r'showboat\s+exec\s+\S+\s+bash\s+"([^"]+)"', text, flags=re.IGNORECASE
-    )
-    if not match:
-        return 0
+    import shlex
 
-    cmd_content = match.group(1)
-    # Split by && or ; to count separate commands
-    commands = re.split(r"\s*&&\s*|\s*;\s*", cmd_content)
-    # Filter out empty strings
-    return len([c for c in commands if c.strip()])
+    total_commands = 0
+    lines = text.splitlines()
+
+    for line in lines:
+        line = line.strip()
+        # Check if this is a showboat exec line
+        if not re.search(r"\bshowboat\s+exec\b", line, flags=re.IGNORECASE):
+            continue
+
+        try:
+            parts = shlex.split(line)
+            # showboat exec <file> <lang> <code>
+            if len(parts) < 5:
+                continue
+            if parts[1].lower() != "exec":
+                continue
+            # The command content is everything after the 4th part (showboat exec <file> <lang>)
+            cmd_content = " ".join(parts[4:])
+            # Split by && or ; to count separate commands
+            commands = re.split(r"\s*&&\s*|\s*;\s*", cmd_content)
+            # Filter out empty strings
+            total_commands += len([c for c in commands if c.strip()])
+        except (ValueError, IndexError):
+            # If shlex.split fails (e.g., unbalanced quotes), skip this line
+            continue
+
+    return total_commands
 
 
 def contains_any(text: str, items: List[str]) -> List[str]:
@@ -64,13 +81,16 @@ def resolve_expected_text(
 def check_docker_logs_equivalence(text: str, required: str) -> bool:
     """Check if docker logs command is semantically equivalent."""
     # Accept both: docker logs myapp --tail 100 and docker logs --tail 100 myapp
-    if (
-        "docker logs" in text.lower()
-        and "--tail 100" in text.lower()
-        and "myapp" in text.lower()
-    ):
+    # Use regex to ensure tail value is exactly 100 (not 1000)
+    pattern = r"--tail(?:=|\s+)100(?:\D|$)"
+    low = text.lower()
+    if "docker logs" in low and re.search(pattern, low) and "myapp" in low:
         return True
-    return required.lower() in text.lower()
+    # Fallback: check if required string is present, but only if it doesn't
+    # contain --tail (to avoid matching --tail 1000 when we require --tail 100)
+    if "--tail" not in required.lower():
+        return required.lower() in low
+    return False
 
 
 def check_refusal_equivalence(text: str) -> bool:
