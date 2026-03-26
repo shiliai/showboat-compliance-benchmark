@@ -46,7 +46,7 @@ if [[ -z "$OPENCODE_BIN_DEFAULT" ]]; then
 fi
 
 OPENCODE_RUNNER_TEMPLATE_DEFAULT="$OPENCODE_BIN_DEFAULT run --model {model} --format json"
-CLAUDE_RUNNER_TEMPLATE_DEFAULT="bash -lc 'cp ~/.claude/claude_settings.json ~/.claude/settings.json 2>/dev/null && claude --dangerously-skip-permissions -p \"\$0\"'"
+CLAUDE_RUNNER_TEMPLATE_DEFAULT="bash -lc 'cp ~/.claude/claude_settings.json ~/.claude/settings.json 2>/dev/null && claude --dangerously-skip-permissions --model {model} -p \"\$0\"'"
 OPENCODE_RUNNER_TEMPLATE="${OPENCODE_RUNNER_TEMPLATE:-$OPENCODE_RUNNER_TEMPLATE_DEFAULT}"
 CLAUDE_RUNNER_TEMPLATE="${CLAUDE_RUNNER_TEMPLATE:-$CLAUDE_RUNNER_TEMPLATE_DEFAULT}"
 TIMEOUT="${TIMEOUT:-300}"
@@ -90,8 +90,12 @@ matches_only_models() {
 
 runner_for_model() {
   local model="$1"
-  if [[ "$model" == relay-claude/* ]]; then
-    printf '%s' "$CLAUDE_RUNNER_TEMPLATE"
+  # Claude CLI accepts bare model names (e.g., claude-opus-4-6, opus)
+  # but does NOT understand provider prefixes (e.g., relay-claude/claude-opus-4-6)
+  if [[ "$model" == relay-claude/* ]] || [[ "$model" == claude-* ]]; then
+    # Strip provider prefix if present, keep bare model name for Claude CLI
+    local claude_model="${model#relay-claude/}"
+    printf '%s' "${CLAUDE_RUNNER_TEMPLATE//\{model\}/$claude_model}"
   else
     printf '%s' "${OPENCODE_RUNNER_TEMPLATE//\{model\}/$model}"
   fi

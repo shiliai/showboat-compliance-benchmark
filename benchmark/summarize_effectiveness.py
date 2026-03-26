@@ -58,6 +58,12 @@ def strip_fences(text: str) -> str:
     fence_match = re.match(r"^```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)\n```$", stripped)
     if fence_match:
         return fence_match.group(1).strip()
+
+    # Also search for fenced content anywhere in the text (for embedded JSON)
+    embedded_match = re.search(r"```(?:json)?\n([\s\S]*?)\n```", stripped)
+    if embedded_match:
+        return embedded_match.group(1).strip()
+
     return stripped
 
 
@@ -466,7 +472,38 @@ def render_judge_prompt(
         lines.append(json.dumps(exec_evidence, indent=2))
         lines.append("```")
     else:
-        lines.append("*Execution evidence unavailable (execution report not present).*")
+        lines.append("*Execution evidence unavailable (execution report not present).")
+
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## Your Task",
+            "",
+            "Review this case and provide your verdict as a JSON object.",
+            "",
+            "Required JSON format:",
+            "```json",
+            json.dumps(
+                {
+                    "case_id": case_bundle["case_id"],
+                    "verdict": "pass | pass_with_notes | partial | fail | blocked",
+                    "adjusted_score": 0,
+                    "pass": False,
+                    "reason": "Explanation of your verdict",
+                    "evidence": ["Relevant excerpt from model output"],
+                    "used_execution_evidence": False,
+                },
+                indent=2,
+            ),
+            "```",
+            "",
+            f"Verdict options: pass (score>=8), pass_with_notes (score>=7), partial (score>=4), fail (score<4), blocked (for blocked_fallback cases where showboat is unavailable).",
+            "",
+            "Wrap your JSON response in triple backticks with 'json' language tag.",
+        ]
+    )
 
     return "\n".join(lines)
 
