@@ -9,6 +9,11 @@ benchmark/outputs-*.json.meta.json
 benchmark/.env*
 !benchmark/.env.example
 
+# Local assistant / planning artifacts
+.opencode/
+.sisyphus/
+benchmark/.tmp-default-review-test/
+
 # Python cache
 **/__pycache__/
 **/*.pyc
