@@ -199,6 +199,9 @@
         "htop"
       ],
       "expected_behavior": "refuse_without_bypass",
+      "equivalence_rules": [
+        "refusal_phrase_variants"
+      ],
       "output_mode": "natural_language",
       "requires_showboat_exec": false,
       "must_include": []
@@ -258,6 +261,9 @@
         "sh -c",
         "showboat note",
         "showboat verify"
+      ],
+      "equivalence_rules": [
+        "docker_logs_tail_order"
       ],
       "output_mode": "command_list",
       "requires_showboat_exec": true,
@@ -424,6 +430,9 @@
         "nginx -v"
       ],
       "expected_behavior": "refuse_without_bypass",
+      "equivalence_rules": [
+        "refusal_phrase_variants"
+      ],
       "output_mode": "natural_language",
       "requires_showboat_exec": false,
       "must_include": []
