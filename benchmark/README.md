@@ -99,7 +99,7 @@ If an agent can read this README and has shell access, it should be able to run 
 
 ## How it works
 
-`run_all.sh` executes the benchmark in four stages:
+`run_all.sh` executes the benchmark in four core stages, plus an optional post-run summary stage:
 
 1. **Prepare per-case workspaces**
    - create `case-workspaces/<model>/<case>/`
@@ -112,6 +112,11 @@ If an agent can read this README and has shell access, it should be able to run 
 4. **Optionally execute and audit** (`EXECUTE_OUTPUTS=1`)
    - execute model-emitted Showboat commands
    - generate model artifacts and benchmark review docs
+5. **Optionally generate the effectiveness summary** (`ENABLE_EFFECTIVENESS_SUMMARY=1`)
+    - build per-case review bundles from existing outputs/reports
+    - generate pointer-style judge prompts that reference on-disk skill files at `skills/final-effectiveness-summary/` instead of inlining full skill text
+    - write `reports/final-effectiveness-summary.md` and `.json`
+    - save prompt/review artifacts under `artifacts/effectiveness-summary/`
 
 ## One-command batch run
 
@@ -150,6 +155,36 @@ This additionally creates:
 - `reports/execute-*.json`
 - `artifacts/<model-slug>/showboat-...md` model-generated Showboat documents
 - `artifacts/<model-slug>/benchmark-...md` benchmark review documents that capture AGENTS/task/model output/execution summary
+
+## Effectiveness summary mode
+
+Generate the post-run effectiveness summary without invoking a review judge:
+
+```bash
+ENABLE_EFFECTIVENESS_SUMMARY=1 ./run_all.sh
+```
+
+This additionally creates:
+
+- `reports/final-effectiveness-summary.md`
+- `reports/final-effectiveness-summary.json`
+- `artifacts/effectiveness-summary/`
+
+The generated judge prompts use **pointer-style invocation**: instead of inlining the full skill text (SKILL.md + references) into each prompt, the prompt tells the judge model to read the skill definition and reference files from their on-disk locations under `skills/final-effectiveness-summary/`. This keeps prompts compact and avoids duplicating ~370 lines of skill content across every case.
+
+Invoke the review judge as well, using the default pinned review model (`relay-kimi/kimi-k2.5`):
+
+```bash
+ENABLE_EFFECTIVENESS_SUMMARY=1 EFFECTIVENESS_INVOKE_JUDGE=1 ./run_all.sh
+```
+
+All runner and effectiveness-summary environment variables are now listed in `.env.example`, so the easiest setup is:
+
+```bash
+cp .env.example .env.benchmark
+# edit .env.benchmark
+ENV_FILE=.env.benchmark ./run_all.sh
+```
 
 ## Common variants
 

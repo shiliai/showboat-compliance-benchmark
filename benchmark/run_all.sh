@@ -55,6 +55,7 @@ ONLY_MODELS="${ONLY_MODELS:-}"
 SKIP_EXISTING="${SKIP_EXISTING:-0}"
 EXECUTE_OUTPUTS="${EXECUTE_OUTPUTS:-0}"
 EXECUTE_TIMEOUT="${EXECUTE_TIMEOUT:-60}"
+ENABLE_EFFECTIVENESS_SUMMARY="${ENABLE_EFFECTIVENESS_SUMMARY:-0}"
 
 if [[ ! -f "$MODELS_FILE" ]]; then
   echo "error: models file not found: $MODELS_FILE" >&2
@@ -207,3 +208,9 @@ else:
     for name, score, max_score, pct, passed, total in rows:
         print(f'{pct:6.2f}%  {passed:2d}/{total:2d}  {score:3d}/{max_score:3d}  {name}')
 PY
+
+if [[ "$ENABLE_EFFECTIVENESS_SUMMARY" == "1" ]]; then
+  echo
+  echo "=== Summary (effectiveness review) ==="
+  ./run_effectiveness_summary.sh
+fi
