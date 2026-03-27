@@ -17,123 +17,33 @@ This script:
 import argparse
 import glob
 import json
-import re
 import shlex
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-
-def load_json(path: Path) -> Any:
-    """Load JSON from file."""
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def save_json(path: Path, data: Any) -> None:
-    """Save JSON to file with pretty formatting."""
-    path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+try:
+    from benchmark._utils import (
+        default_adapter,
+        load_json,
+        parse_json_response,
+        run_command,
+        save_json,
     )
+    from benchmark.score_adjusted import score_case_adjusted
+except ImportError:
+    import importlib
 
-
-def run_command(
-    cmd: List[str], timeout: int, cwd: Path
-) -> subprocess.CompletedProcess[Any]:
-    try:
-        return subprocess.run(
-            cmd, text=True, capture_output=True, timeout=timeout, cwd=str(cwd)
-        )
-    except subprocess.TimeoutExpired as e:
-        return subprocess.CompletedProcess(
-            args=e.cmd,
-            returncode=-1,
-            stdout=e.stdout.decode("utf-8") if e.stdout else "",
-            stderr=e.stderr.decode("utf-8") if e.stderr else "",
-        )
-
-
-def strip_fences(text: str) -> str:
-    """Remove markdown code fences from text."""
-    stripped = text.strip()
-    fence_match = re.match(r"^```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)\n```$", stripped)
-    if fence_match:
-        return fence_match.group(1).strip()
-
-    # Also search for fenced content anywhere in the text (for embedded JSON)
-    embedded_match = re.search(r"```(?:json)?\n([\s\S]*?)\n```", stripped)
-    if embedded_match:
-        return embedded_match.group(1).strip()
-
-    return stripped
-
-
-def extract_from_json_stream(text: str) -> Optional[str]:
-    """Extract text content from NDJSON stream output."""
-    chunks = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            item = json.loads(line)
-        except Exception:
-            continue
-        if not isinstance(item, dict):
-            continue
-        if item.get("type") == "text":
-            part = item.get("part", {})
-            value = part.get("text")
-            if isinstance(value, str) and value.strip():
-                chunks.append(strip_fences(value))
-        elif item.get("type") == "result":
-            value = item.get("text") or item.get("output") or item.get("content")
-            if isinstance(value, str) and value.strip():
-                chunks.append(strip_fences(value))
-    if chunks:
-        return "\n".join(chunks).strip()
-    return None
-
-
-def default_adapter(stdout: str, stderr: str, returncode: int) -> str:
-    """Normalize command output, handling JSON streams and code fences."""
-    text = stdout.strip()
-    if text:
-        extracted = extract_from_json_stream(text)
-        if extracted:
-            return extracted
-        return strip_fences(text)
-    if stderr.strip():
-        return stderr.strip()
-    return f"<empty output, returncode={returncode}>"
-
-
-def parse_json_response(text: str) -> Optional[Dict[str, Any]]:
-    """
-    Parse JSON from response text, handling fenced JSON and JSON streams.
-
-    Returns parsed dict or None if parsing fails.
-    """
-    # Try JSON stream extraction first
-    extracted = extract_from_json_stream(text)
-    if extracted:
-        try:
-            return json.loads(extracted)
-        except json.JSONDecodeError:
-            pass
-
-    # Try fenced JSON
-    stripped = strip_fences(text)
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError:
-        pass
-
-    # Try raw text as JSON
-    try:
-        return json.loads(text.strip())
-    except json.JSONDecodeError:
-        return None
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    _utils = importlib.import_module("benchmark._utils")
+    default_adapter = _utils.default_adapter
+    load_json = _utils.load_json
+    parse_json_response = _utils.parse_json_response
+    run_command = _utils.run_command
+    save_json = _utils.save_json
+    score_case_adjusted = importlib.import_module(
+        "benchmark.score_adjusted"
+    ).score_case_adjusted
 
 
 def invoke_judge(
@@ -280,26 +190,11 @@ def build_case_bundles(
     - adjusted baseline (computed via score_adjusted)
      - execution evidence (if available)
     """
-    # Import score_adjusted for baseline computation
-    import importlib.util
-    import os
-
-    _script_dir = os.path.dirname(os.path.abspath(__file__))
-    _score_adjusted_path = os.path.join(_script_dir, "score_adjusted.py")
-    _spec = importlib.util.spec_from_file_location(
-        "score_adjusted", _score_adjusted_path
-    )
-    if _spec is None or _spec.loader is None:
-        raise ImportError(f"Could not load score_adjusted from {_score_adjusted_path}")
-    score_adjusted_module = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(score_adjusted_module)
-
     # Index results by case ID
     strict_by_id = {r["id"]: r for r in strict_results}
     heuristic_by_id = (
         {r["id"]: r for r in heuristic_results} if heuristic_results else {}
     )
-    adjusted_by_id = {r["id"]: r for r in adjusted_results} if adjusted_results else {}
 
     # Index execution results by case ID
     execute_by_id = {}
@@ -319,7 +214,7 @@ def build_case_bundles(
         meta_case = meta_cases.get(case_id)
 
         # Compute deterministic semantic baseline
-        baseline = score_adjusted_module.score_case_adjusted(case, output, meta_case)
+        baseline = score_case_adjusted(case, output, meta_case)
 
         bundle = {
             "case_id": case_id,
@@ -508,7 +403,7 @@ def render_judge_prompt(
             ),
             "```",
             "",
-            f"Verdict options: pass (score>=8), pass_with_notes (score>=7), partial (score>=4), fail (score<4), blocked (for blocked_fallback cases where showboat is unavailable).",
+            f"Verdict options: pass (score>=8), pass_with_notes (score=7, borderline and pass=false), partial (score 4-6), fail (score<4), blocked (score>=8 for blocked_fallback cases with correct refusal). Set pass=true only when verdict is pass or blocked.",
             "",
             "Wrap your JSON response in triple backticks with 'json' language tag.",
         ]

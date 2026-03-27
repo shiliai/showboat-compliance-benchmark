@@ -3,7 +3,7 @@
 Validate the final-effectiveness-summary skill by running evals with and without the skill.
 
 This script runs each eval prompt twice:
-1. with_skill: prepend skill instructions (SKILL.md + references content) to the eval prompt
+1. with_skill: prepend pointer-style instructions that tell the model to read skill files from disk
 2. without_skill: run the eval prompt as-is (baseline)
 
 Outputs are written to iteration workspace directories with metadata and timing info.
@@ -11,92 +11,23 @@ Outputs are written to iteration workspace directories with metadata and timing 
 
 import argparse
 import json
-import re
 import shlex
-import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from benchmark._utils import default_adapter, load_json, run_command, save_json
+except ImportError:
+    import importlib
 
-def load_json(path: Path) -> Any:
-    """Load JSON from file."""
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def save_json(path: Path, data: Any) -> None:
-    """Save JSON to file with pretty formatting."""
-    path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-
-
-def run_command(
-    cmd: List[str], timeout: int, cwd: Path
-) -> subprocess.CompletedProcess[str]:
-    """Run command with timeout handling. Returns CompletedProcess with returncode=-1 on timeout."""
-    try:
-        return subprocess.run(
-            cmd, text=True, capture_output=True, timeout=timeout, cwd=str(cwd)
-        )
-    except subprocess.TimeoutExpired as e:
-        # Return a CompletedProcess-like object indicating timeout
-        return subprocess.CompletedProcess(
-            args=e.cmd,
-            returncode=-1,
-            stdout=e.stdout.decode("utf-8") if e.stdout else "",
-            stderr=e.stderr.decode("utf-8") if e.stderr else "",
-        )
-
-
-def strip_fences(text: str) -> str:
-    """Strip markdown code fences from text."""
-    stripped = text.strip()
-    fence_match = re.match(r"^```(?:[a-zA-Z0-9_-]+)?\n([\s\S]*?)\n```$", stripped)
-    if fence_match:
-        return fence_match.group(1).strip()
-    return stripped
-
-
-def extract_from_json_stream(text: str) -> Optional[str]:
-    """Extract text from NDJSON stream format."""
-    chunks = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            item = json.loads(line)
-        except Exception:
-            continue
-        if not isinstance(item, dict):
-            continue
-        if item.get("type") == "text":
-            part = item.get("part", {})
-            value = part.get("text")
-            if isinstance(value, str) and value.strip():
-                chunks.append(strip_fences(value))
-        elif item.get("type") == "result":
-            value = item.get("text") or item.get("output") or item.get("content")
-            if isinstance(value, str) and value.strip():
-                chunks.append(strip_fences(value))
-    if chunks:
-        return "\n".join(chunks).strip()
-    return None
-
-
-def default_adapter(stdout: str, stderr: str, returncode: int) -> str:
-    """Normalize output from runner, handling JSON stream and fences."""
-    text = stdout.strip()
-    if text:
-        extracted = extract_from_json_stream(text)
-        if extracted:
-            return extracted
-        return strip_fences(text)
-    if stderr.strip():
-        return stderr.strip()
-    return f"<empty output, returncode={returncode}>"
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    _utils = importlib.import_module("benchmark._utils")
+    default_adapter = _utils.default_adapter
+    load_json = _utils.load_json
+    run_command = _utils.run_command
+    save_json = _utils.save_json
 
 
 def resolve_source_files(
@@ -140,31 +71,29 @@ def resolve_source_files(
     return sources
 
 
-def load_skill_content(skill_path: Path) -> str:
-    """Load skill instructions from SKILL.md and all reference files."""
-    skill_md = skill_path / "SKILL.md"
-    if not skill_md.exists():
-        raise FileNotFoundError(f"SKILL.md not found at {skill_path}")
-
-    content_parts = [skill_md.read_text(encoding="utf-8")]
-
-    # Load all reference files
-    references_dir = skill_path / "references"
-    if references_dir.exists():
-        for ref_file in sorted(references_dir.glob("*.md")):
-            ref_content = ref_file.read_text(encoding="utf-8")
-            content_parts.append(
-                f"\n\n---\n\n## Reference: {ref_file.name}\n\n{ref_content}"
-            )
-
-    return "\n".join(content_parts)
+def validate_skill_files(skill_path: Path) -> None:
+    required_files = [
+        skill_path / "SKILL.md",
+        skill_path / "references" / "review-rubric.md",
+        skill_path / "references" / "response-schema.md",
+    ]
+    missing_files = [str(path) for path in required_files if not path.exists()]
+    if missing_files:
+        raise FileNotFoundError(
+            "Missing required skill files: " + ", ".join(sorted(missing_files))
+        )
 
 
-def build_prompt_with_skill(eval_prompt: str, skill_content: str) -> str:
-    """Build prompt with skill instructions prepended."""
+def build_prompt_with_skill(eval_prompt: str, skill_path: Path) -> str:
+    abs_skill = skill_path.resolve()
     return f"""## Skill Instructions
 
-{skill_content}
+Before answering this evaluation, read the skill files from disk:
+1. `{abs_skill}/SKILL.md`
+2. `{abs_skill}/references/review-rubric.md`
+3. `{abs_skill}/references/response-schema.md`
+
+Follow those files exactly.
 
 ---
 
@@ -366,8 +295,7 @@ def main():
         )
         sys.exit(1)
 
-    # Load skill content
-    skill_content = load_skill_content(skill_path)
+    validate_skill_files(skill_path)
 
     # Load evals
     evals_data = load_json(evals_path)
@@ -438,7 +366,7 @@ def main():
 
             # Build prompt
             if mode == "with_skill":
-                prompt = build_prompt_with_skill(rendered_eval_prompt, skill_content)
+                prompt = build_prompt_with_skill(rendered_eval_prompt, skill_path)
             else:
                 prompt = rendered_eval_prompt
 
